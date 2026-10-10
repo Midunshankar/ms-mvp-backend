@@ -6,8 +6,6 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const roadmapRoutes = require("./routes/roadmap");
-
 dotenv.config();
 
 const app = express();
@@ -16,12 +14,11 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: "100kb" }));
 
-// Data storage
-const dataDirectory = path.join(__dirname, "data");
-const profilesFile = path.join(dataDirectory, "profiles.json");
+const dataDir = path.join(__dirname, "data");
+const profilesFile = path.join(dataDir, "profiles.json");
 
-if (!fs.existsSync(dataDirectory)) {
-  fs.mkdirSync(dataDirectory, { recursive: true });
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
 }
 
 if (!fs.existsSync(profilesFile)) {
@@ -29,67 +26,36 @@ if (!fs.existsSync(profilesFile)) {
 }
 
 function readProfiles() {
-  try {
-    const content = fs.readFileSync(profilesFile, "utf8");
-    const profiles = JSON.parse(content);
-
-    return Array.isArray(profiles) ? profiles : [];
-  } catch (error) {
-    throw new Error("Could not read profile storage.");
-  }
+  return JSON.parse(fs.readFileSync(profilesFile, "utf8"));
 }
 
 function saveProfiles(profiles) {
-  fs.writeFileSync(
-    profilesFile,
-    JSON.stringify(profiles, null, 2),
-    "utf8"
-  );
+  fs.writeFileSync(profilesFile, JSON.stringify(profiles, null, 2));
 }
 
-// Home
 app.get("/", (req, res) => {
   res.json({
     success: true,
     name: "SkillSprint AI",
-    message: "Backend is running",
-    version: "1.0.0"
+    message: "Backend is running"
   });
 });
 
-// Health check
 app.get("/api/health", (req, res) => {
-  res.json({
-    success: true,
-    status: "OK"
-  });
+  res.json({ success: true, status: "OK" });
 });
 
-// Career roadmap
-app.use("/api/roadmap", roadmapRoutes);
-
-// Create profile
 app.post("/api/profile", (req, res) => {
   const { name, education, career, skills = "" } = req.body;
 
   if (
-    typeof name !== "string" ||
-    !name.trim() ||
-    typeof education !== "string" ||
-    !education.trim() ||
-    typeof career !== "string" ||
-    !career.trim()
+    typeof name !== "string" || !name.trim() ||
+    typeof education !== "string" || !education.trim() ||
+    typeof career !== "string" || !career.trim()
   ) {
     return res.status(400).json({
       success: false,
       message: "Name, education and career are required."
-    });
-  }
-
-  if (typeof skills !== "string" && !Array.isArray(skills)) {
-    return res.status(400).json({
-      success: false,
-      message: "Skills must be text or an array."
     });
   }
 
@@ -102,8 +68,8 @@ app.post("/api/profile", (req, res) => {
       education: education.trim(),
       career: career.trim(),
       skills,
-      createdAt: new Date().toISOString(),
-      completedTasks: []
+      completedTasks: [],
+      createdAt: new Date().toISOString()
     };
 
     profiles.push(profile);
@@ -111,35 +77,28 @@ app.post("/api/profile", (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Profile created.",
       profile
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({
       success: false,
-      message: "Could not save the profile."
+      message: "Could not save profile."
     });
   }
 });
 
-// List profiles
 app.get("/api/profiles", (req, res) => {
   try {
     const profiles = readProfiles();
 
-    // Return only basic profile details.
     res.json({
       success: true,
       count: profiles.length,
-      profiles: profiles.map(profile => ({
-        id: profile.id,
-        name: profile.name,
-        education: profile.education,
-        career: profile.career,
-        createdAt: profile.createdAt
+      profiles: profiles.map(({ id, name, education, career, createdAt }) => ({
+        id, name, education, career, createdAt
       }))
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({
       success: false,
       message: "Could not load profiles."
@@ -147,7 +106,6 @@ app.get("/api/profiles", (req, res) => {
   }
 });
 
-// Get one profile
 app.get("/api/profile/:id", (req, res) => {
   try {
     const profile = readProfiles().find(
@@ -162,7 +120,7 @@ app.get("/api/profile/:id", (req, res) => {
     }
 
     res.json({ success: true, profile });
-  } catch (error) {
+  } catch {
     res.status(500).json({
       success: false,
       message: "Could not load profile."
@@ -170,74 +128,41 @@ app.get("/api/profile/:id", (req, res) => {
   }
 });
 
-// Update profile
 app.put("/api/profile/:id", (req, res) => {
-  const { name, education, career, skills } = req.body;
-
   try {
     const profiles = readProfiles();
-    const index = profiles.findIndex(
-      item => item.id === req.params.id
-    );
+    const profile = profiles.find(item => item.id === req.params.id);
 
-    if (index === -1) {
+    if (!profile) {
       return res.status(404).json({
         success: false,
         message: "Profile not found."
       });
     }
 
-    const current = profiles[index];
+    for (const field of ["name", "education", "career"]) {
+      if (req.body[field] !== undefined) {
+        if (
+          typeof req.body[field] !== "string" ||
+          !req.body[field].trim()
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: `${field} must be non-empty text.`
+          });
+        }
 
-    if (name !== undefined) {
-      if (typeof name !== "string" || !name.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "Name must be non-empty text."
-        });
+        profile[field] = req.body[field].trim();
       }
-      current.name = name.trim();
     }
 
-    if (education !== undefined) {
-      if (typeof education !== "string" || !education.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "Education must be non-empty text."
-        });
-      }
-      current.education = education.trim();
+    if (req.body.skills !== undefined) {
+      profile.skills = req.body.skills;
     }
 
-    if (career !== undefined) {
-      if (typeof career !== "string" || !career.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "Career must be non-empty text."
-        });
-      }
-      current.career = career.trim();
-    }
-
-    if (skills !== undefined) {
-      if (typeof skills !== "string" && !Array.isArray(skills)) {
-        return res.status(400).json({
-          success: false,
-          message: "Skills must be text or an array."
-        });
-      }
-      current.skills = skills;
-    }
-
-    profiles[index] = current;
     saveProfiles(profiles);
-
-    res.json({
-      success: true,
-      message: "Profile updated.",
-      profile: current
-    });
-  } catch (error) {
+    res.json({ success: true, profile });
+  } catch {
     res.status(500).json({
       success: false,
       message: "Could not update profile."
@@ -245,13 +170,10 @@ app.put("/api/profile/:id", (req, res) => {
   }
 });
 
-// Delete profile
 app.delete("/api/profile/:id", (req, res) => {
   try {
     const profiles = readProfiles();
-    const updated = profiles.filter(
-      item => item.id !== req.params.id
-    );
+    const updated = profiles.filter(item => item.id !== req.params.id);
 
     if (updated.length === profiles.length) {
       return res.status(404).json({
@@ -261,12 +183,8 @@ app.delete("/api/profile/:id", (req, res) => {
     }
 
     saveProfiles(updated);
-
-    res.json({
-      success: true,
-      message: "Profile deleted."
-    });
-  } catch (error) {
+    res.json({ success: true, message: "Profile deleted." });
+  } catch {
     res.status(500).json({
       success: false,
       message: "Could not delete profile."
@@ -274,7 +192,69 @@ app.delete("/api/profile/:id", (req, res) => {
   }
 });
 
-// Save completed roadmap tasks
+const roadmaps = {
+  sdr: [
+    "Communication Skills", "Sales Fundamentals", "CRM Basics",
+    "Cold Calling", "Email Outreach", "Lead Research",
+    "Interview Preparation", "Job Applications"
+  ],
+  web: [
+    "HTML", "CSS", "JavaScript", "Git and GitHub",
+    "Responsive Design", "APIs", "Build Projects", "Create Portfolio"
+  ],
+  data: [
+    "Excel", "SQL", "Statistics", "Power BI",
+    "Python Basics", "Data Projects", "Portfolio", "Apply for Jobs"
+  ],
+  hr: [
+    "Communication Skills", "HR Fundamentals", "Recruitment",
+    "Excel", "Interview Coordination", "HR Software",
+    "Resume Preparation", "Apply for Jobs"
+  ],
+  finance: [
+    "Accounting Fundamentals", "Advanced Excel", "Tally",
+    "GST Basics", "Financial Analysis", "Practical Projects",
+    "Resume Preparation", "Apply for Jobs"
+  ],
+  marketing: [
+    "Marketing Fundamentals", "Social Media Marketing",
+    "Content Creation", "SEO Basics", "Digital Advertising",
+    "Marketing Analytics", "Build a Portfolio", "Apply for Jobs"
+  ]
+};
+
+app.post("/api/roadmap", (req, res) => {
+  const { career, skills = [] } = req.body;
+
+  if (typeof career !== "string" || !career.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "Career is required."
+    });
+  }
+
+  const tasks = roadmaps[career.trim().toLowerCase()] || [
+    "Research your career",
+    "Learn industry fundamentals",
+    "Develop practical skills",
+    "Complete projects",
+    "Prepare your resume",
+    "Practise interviews",
+    "Apply for jobs"
+  ];
+
+  res.json({
+    success: true,
+    career: career.trim(),
+    currentSkills: skills,
+    roadmap: tasks.map((title, index) => ({
+      step: index + 1,
+      title,
+      completed: false
+    }))
+  });
+});
+
 app.put("/api/progress/:id", (req, res) => {
   const { completedTasks } = req.body;
 
@@ -290,9 +270,7 @@ app.put("/api/progress/:id", (req, res) => {
 
   try {
     const profiles = readProfiles();
-    const profile = profiles.find(
-      item => item.id === req.params.id
-    );
+    const profile = profiles.find(item => item.id === req.params.id);
 
     if (!profile) {
       return res.status(404).json({
@@ -309,7 +287,7 @@ app.put("/api/progress/:id", (req, res) => {
       completedTasks: profile.completedTasks,
       completedCount: profile.completedTasks.length
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({
       success: false,
       message: "Could not save progress."
@@ -317,17 +295,13 @@ app.put("/api/progress/:id", (req, res) => {
   }
 });
 
-// Interview feedback
 app.post("/api/interview", (req, res) => {
-  const { question, answer } = req.body;
+  const { question = "", answer } = req.body;
 
-  if (
-    typeof answer !== "string" ||
-    !answer.trim()
-  ) {
+  if (typeof answer !== "string" || !answer.trim()) {
     return res.status(400).json({
       success: false,
-      message: "Please provide an interview answer."
+      message: "Interview answer is required."
     });
   }
 
@@ -338,63 +312,53 @@ app.post("/api/interview", (req, res) => {
     });
   }
 
-  const words = answer.trim().split(/\s+/);
-  const wordCount = words.length;
+  const wordCount = answer.trim().split(/\s+/).length;
 
   let feedback;
-  let suggestions = [];
+  let suggestions;
 
   if (wordCount < 10) {
     feedback = "Your answer needs more detail.";
     suggestions = [
       "Explain your background.",
       "Mention a relevant skill.",
-      "Add a practical example."
+      "Add an example."
     ];
   } else if (wordCount < 30) {
-    feedback = "Good start. Expand your answer with a specific example.";
+    feedback = "Good start. Add a specific example.";
     suggestions = [
       "Explain the situation.",
-      "Describe your action.",
-      "Share the result or lesson learned."
+      "Describe your actions.",
+      "Share the result."
     ];
   } else {
-    feedback = "Your answer has useful detail.";
+    feedback = "Your answer contains useful detail.";
     suggestions = [
       "Keep the answer focused.",
-      "Use the STAR method when appropriate.",
-      "Support your points with genuine examples."
+      "Use the STAR method where appropriate.",
+      "Include genuine examples."
     ];
   }
 
   res.json({
     success: true,
-    question: typeof question === "string" ? question : "",
+    question,
     wordCount,
     feedback,
     suggestions,
-    method: "Rule-based feedback, not an AI evaluation"
+    method: "Rule-based feedback"
   });
 });
 
-// Resume text generation
 app.post("/api/resume", (req, res) => {
   const {
-    name,
-    email,
-    phone,
-    role,
-    about,
-    skills,
-    education,
-    projects
+    name, email = "", phone = "", role,
+    about = "", skills = "", education = "", projects = ""
   } = req.body;
 
   if (
-    typeof name !== "string" ||
-    !name.trim() ||
-    typeof role !== "string" ||
-    !role.trim()
+    typeof name !== "string" || !name.trim() ||
+    typeof role !== "string" || !role.trim()
   ) {
     return res.status(400).json({
       success: false,
@@ -402,32 +366,32 @@ app.post("/api/resume", (req, res) => {
     });
   }
 
+  const skillsText = Array.isArray(skills)
+    ? skills.join(", ")
+    : String(skills);
+
   const resume = [
     name.trim(),
     role.trim(),
-    email || "",
-    phone || "",
+    email,
+    phone,
     "",
     "PROFILE",
-    about || "",
+    about,
     "",
     "SKILLS",
-    Array.isArray(skills) ? skills.join(", ") : (skills || ""),
+    skillsText,
     "",
     "EDUCATION",
-    education || "",
+    education,
     "",
     "PROJECTS",
-    projects || ""
+    projects
   ].join("\n");
 
-  res.json({
-    success: true,
-    resume
-  });
+  res.json({ success: true, resume });
 });
 
-// Not found
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -435,16 +399,22 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
   console.error(err.message);
 
+  if (err instanceof SyntaxError && err.status === 400) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid JSON request body."
+    });
+  }
+
   res.status(500).json({
     success: false,
-    message: "An unexpected server error occurred."
+    message: "Internal server error."
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`SkillSprint AI backend running at http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`SkillSprint AI backend running on port ${PORT}`);
 });
